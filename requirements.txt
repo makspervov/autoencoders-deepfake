@@ -1,0 +1,11 @@
+torch
+torchvision
+kaggle
+facenet-pytorch
+openvino
+onnx
+matplotlib
+scikit-learn
+numpy
+opencv-python
+tqdm
