@@ -7,7 +7,7 @@ This implementation provides full execution support for CPU, NVIDIA CUDA, and In
 ## Prerequisites
 
 - Python 3.10+
-- A [Kaggle](https://www.kaggle.com/) account for downloading the dataset.
+- (Optional) A [Hugging Face](https://huggingface.co/) account if downloading restricted datasets, although the default dataset is public.
 
 ## Installation
 
@@ -16,26 +16,16 @@ This implementation provides full execution support for CPU, NVIDIA CUDA, and In
    pip install -r requirements.txt
    ```
 
-2. **Configure Kaggle API Credentials:**
-   To download the FaceForensics++ dataset, you must configure your Kaggle credentials.
-   - Go to your Kaggle account settings and click "Create New API Token". This will download a `kaggle.json` file.
-   - Place this file in your local `~/.kaggle/` directory:
-     ```bash
-     mkdir -p ~/.kaggle
-     cp /path/to/kaggle.json ~/.kaggle/
-     chmod 600 ~/.kaggle/kaggle.json
-     ```
-
 ## Pipeline Execution
 
 The pipeline is designed to be executed sequentially through independent scripts.
 
 ### 1. Download Dataset
 
-Download the FaceForensics++ (C23 compression level) dataset into the raw data folder:
+Download the DeepFakeFace dataset into the raw data folder from the Hugging Face Hub:
 
 ```bash
-python download.py --dataset xdxd003/ff-c23 --path ./data/raw
+python download.py --dataset OpenRL/DeepFakeFace --path ./data/raw
 ```
 
 ### 2. Preprocessing (Face Extraction)

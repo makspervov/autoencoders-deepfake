@@ -1,6 +1,6 @@
 torch
 torchvision
-kaggle
+huggingface_hub
 facenet-pytorch
 openvino
 onnx

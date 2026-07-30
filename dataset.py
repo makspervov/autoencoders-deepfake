@@ -7,9 +7,9 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 
 
-class FaceForensicsDataset(Dataset):
+class DeepFakeFaceDataset(Dataset):
     """
-    Dataset class for loading pre-cropped face images from FaceForensics++.
+    Dataset class for loading pre-cropped face images from the DeepFakeFace dataset.
     Expects the directory structure to separate real and fake images.
     """
 
@@ -87,10 +87,10 @@ def get_dataloaders(
     # Create datasets
     # Usually, we'd split the real dataset into train/val/test splits.
     # For simplicity, we assume real_dir contains the train split.
-    real_dataset = FaceForensicsDataset(
+    real_dataset = DeepFakeFaceDataset(
         root_dir=real_dir, image_size=image_size, label=0
     )
-    fake_dataset = FaceForensicsDataset(
+    fake_dataset = DeepFakeFaceDataset(
         root_dir=fake_dir, image_size=image_size, label=1
     )
 
