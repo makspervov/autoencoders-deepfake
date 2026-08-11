@@ -1,61 +1,71 @@
 import os
-import glob
-from typing import Tuple
-from PIL import Image
+from typing import Tuple, Optional
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
-
+from datasets import load_dataset
+from PIL import Image
 
 class DeepFakeFaceDataset(Dataset):
     """
-    Dataset class for loading pre-cropped face images from the DeepFakeFace dataset.
-    Expects the directory structure to separate real and fake images.
+    Dataset class for loading face images directly from the Hugging Face datasets library.
+    It can be used by both the VAE and DAE pipelines.
     """
 
-    def __init__(self, root_dir: str, image_size: int = 128, label: int = 0):
+    def __init__(self, is_fake: bool, image_size: int = 128, max_samples: int = 500):
         """
         Args:
-            root_dir (str): Path to the directory containing processed images.
-            image_size (int): Size to resize the images to (default: 128).
-            label (int): Label to assign to all images in this directory (0 for pristine, 1 for fake).
+            is_fake (bool): True for fake images, False for real images.
+            image_size (int): Size to resize the images to.
+            max_samples (int): Max samples to load to memory.
         """
-        self.root_dir = root_dir
         self.image_size = image_size
-        self.label = label
+        self.label = 1 if is_fake else 0
 
         # Define image transformations
         self.transform = transforms.Compose(
             [
                 transforms.Resize((self.image_size, self.image_size)),
                 transforms.ToTensor(),
-                # Normalization typically maps [0, 1] to [-1, 1] for VAE/GANs,
-                # but for standard BCE reconstruction, [0, 1] is often preferred.
-                # We will just stick to ToTensor() which normalizes to [0, 1].
             ]
         )
 
-        # Load all image paths
-        self.image_paths = []
-        for ext in ["**/*.png", "**/*.jpg", "**/*.jpeg"]:
-            self.image_paths.extend(
-                glob.glob(os.path.join(root_dir, ext), recursive=True)
-            )
+        print(f"Loading Hugging Face dataset 'OpenRL/DeepFakeFace' (is_fake={is_fake})...")
 
-        if len(self.image_paths) == 0:
-            print(f"Warning: No images found in {root_dir}")
+        # The OpenRL dataset on HF has 120,000 images in 'train' split.
+        # The first 90k are fakes.
+        # The last 30k are wiki (reals).
+
+        self.samples = []
+        try:
+            # We use non-streaming load_dataset but only index into what we need.
+            # Loading the Hugging Face dataset lazily maps the parquet files via pyarrow,
+            # which is incredibly efficient and fast for random access without loading everything to RAM.
+            self.ds = load_dataset('OpenRL/DeepFakeFace', split='train')
+
+            self.start_idx = 0 if is_fake else 90000
+            self.end_idx = min(self.start_idx + max_samples, len(self.ds)) if max_samples else (90000 if is_fake else len(self.ds))
+            self.num_samples = self.end_idx - self.start_idx
+
+        except Exception as e:
+            print(f"Error loading dataset: {e}")
+            self.ds = None
+            self.num_samples = 0
 
     def __len__(self) -> int:
-        return len(self.image_paths)
+        return self.num_samples
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
-        img_path = self.image_paths[idx]
+        if self.ds is None:
+            return torch.zeros((3, self.image_size, self.image_size)), self.label
+
+        real_idx = self.start_idx + idx
         try:
-            image = Image.open(img_path).convert("RGB")
+            image = self.ds[real_idx]['image']
+            image = image.convert("RGB")
             image = self.transform(image)
         except Exception as e:
-            # Fallback to returning a zero tensor if image is corrupted to avoid crashing DataLoader
-            print(f"Error loading {img_path}: {e}")
+            print(f"Error loading image {real_idx}: {e}")
             image = torch.zeros((3, self.image_size, self.image_size))
 
         return image, self.label
@@ -67,31 +77,31 @@ def get_dataloaders(
     batch_size: int = 64,
     image_size: int = 128,
     num_workers: int = 4,
-) -> Tuple[DataLoader, DataLoader, DataLoader]:
+) -> Tuple[Optional[DataLoader], Optional[DataLoader], Optional[DataLoader]]:
     """
     Creates DataLoaders for training (only real data), and evaluation (mixed data).
 
     Args:
-        real_dir: Path to directory containing real (pristine) face images.
-        fake_dir: Path to directory containing fake (manipulated) face images.
+        real_dir: Ignored, uses Hugging Face dataset.
+        fake_dir: Ignored, uses Hugging Face dataset.
         batch_size: Batch size for DataLoader.
         image_size: Size to resize images to.
         num_workers: Number of DataLoader workers.
 
     Returns:
-        train_loader: DataLoader with only real images (for VAE training).
+        train_loader: DataLoader with only real images (for VAE/DAE training).
         test_real_loader: DataLoader with real images for evaluation.
         test_fake_loader: DataLoader with fake images for evaluation.
     """
 
-    # Create datasets
-    # Usually, we'd split the real dataset into train/val/test splits.
-    # For simplicity, we assume real_dir contains the train split.
+    # Create datasets using Hugging Face
+    # Provide a reasonable limit (e.g. 5000 images each) for demonstration,
+    # to avoid overly long epochs on constrained environments.
     real_dataset = DeepFakeFaceDataset(
-        root_dir=real_dir, image_size=image_size, label=0
+        is_fake=False, image_size=image_size, max_samples=5000
     )
     fake_dataset = DeepFakeFaceDataset(
-        root_dir=fake_dir, image_size=image_size, label=1
+        is_fake=True, image_size=image_size, max_samples=5000
     )
 
     # We create a simple random split for real data: 80% train, 20% test
@@ -100,10 +110,7 @@ def get_dataloaders(
     test_real_size = len(real_dataset) - train_size
 
     if len(real_dataset) > 1:
-        import torch
-
         # Use a generator with a fixed seed to prevent data leakage
-        # between independent train.py and evaluate.py runs.
         generator = torch.Generator().manual_seed(42)
         train_dataset, test_real_dataset = torch.utils.data.random_split(
             real_dataset, [train_size, test_real_size], generator=generator
@@ -114,7 +121,6 @@ def get_dataloaders(
         test_real_dataset = real_dataset
 
     # Create DataLoaders
-    # If the dataset is empty, skip dataloader creation to prevent ValueError
     train_loader = (
         DataLoader(
             train_dataset,
