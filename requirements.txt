@@ -1,6 +1,8 @@
 torch
 torchvision
 huggingface_hub
+datasets
+Pillow
 facenet-pytorch
 openvino
 onnx
