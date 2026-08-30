@@ -4,3 +4,4 @@ data/
 results/
 .venv/
 *.onnx.data
+*.code-workspace
