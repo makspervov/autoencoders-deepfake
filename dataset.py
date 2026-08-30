@@ -12,7 +12,7 @@ class DeepFakeFaceDataset(Dataset):
     It can be used by both the VAE and DAE pipelines.
     """
 
-    def __init__(self, is_fake: bool, image_size: int = 128, max_samples: int = 500):
+    def __init__(self, is_fake: bool, image_size: int = 128, max_samples: int = 5000):
         """
         Args:
             is_fake (bool): True for fake images, False for real images.

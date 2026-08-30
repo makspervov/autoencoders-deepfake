@@ -9,7 +9,7 @@ from tqdm import tqdm
 import openvino as ov
 
 from dataset import get_dataloaders
-from model import VAE
+from model_vae import VAE
 
 
 def export_to_openvino(

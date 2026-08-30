@@ -5,7 +5,7 @@ import torch
 import torch.optim as optim
 
 from dataset import get_dataloaders
-from model import VAE, vae_loss
+from model_vae import VAE, vae_loss
 
 
 def train_vae(

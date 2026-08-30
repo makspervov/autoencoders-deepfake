@@ -3,4 +3,5 @@ __pycache__/
 data/
 models/
 results/
+.venv/
 *.onnx.data

@@ -36,6 +36,9 @@ Deepfake detection relies on analyzing faces. Extract and crop faces from the do
 # Run on CPU
 python preprocess.py --input_dir ./data/raw --output_dir ./data/processed --device cpu
 
+# Run on NPU
+python preprocess.py --input_dir ./data/raw --output_dir ./data/processed --device npu
+
 # Or run on CUDA (if available) for faster processing
 python preprocess.py --input_dir ./data/raw --output_dir ./data/processed --device cuda
 ```
@@ -47,7 +50,7 @@ Train the model exclusively on the *real* (pristine) images. Adjust hyperparamet
 *Ensure your real images are located in the designated `real_dir` path.*
 
 ```bash
-python train.py \
+python train_<ae_type>.py \
     --real_dir ./data/processed/real \
     --epochs 50 \
     --batch_size 64 \
@@ -63,13 +66,13 @@ Evaluate the trained VAE on a mixed dataset containing both real and fake images
 
 ```bash
 # Evaluate using standard PyTorch CPU
-python evaluate.py --real_dir ./data/processed/real --fake_dir ./data/processed/fake --device cpu
+python evaluate_<ae_type>.py --real_dir ./data/processed/real --fake_dir ./data/processed/fake --device cpu
 
 # Evaluate using NVIDIA GPU
-python evaluate.py --real_dir ./data/processed/real --fake_dir ./data/processed/fake --device cuda
+python evaluate_<ae_type>.py --real_dir ./data/processed/real --fake_dir ./data/processed/fake --device cuda
 
 # Evaluate using Intel NPU via OpenVINO
-python evaluate.py --real_dir ./data/processed/real --fake_dir ./data/processed/fake --device npu
+python evaluate_<ae_type>.py --real_dir ./data/processed/real --fake_dir ./data/processed/fake --device npu
 ```
 
 Outputs, including ROC curve plots and visual grids, will be saved into the `./results` directory.

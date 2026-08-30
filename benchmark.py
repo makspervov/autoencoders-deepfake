@@ -5,7 +5,7 @@ import torch
 import openvino as ov
 
 # Import all models
-from model import VAE
+from model_vae import VAE
 from model_dae import DAE
 from model_sae import SAE
 
