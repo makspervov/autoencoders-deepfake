@@ -1,127 +1,130 @@
 import os
 import argparse
 import glob
+import multiprocessing
+import torch
 from tqdm import tqdm
 from PIL import Image
 from facenet_pytorch import MTCNN
 
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
 
-def extract_faces(
-    input_dir: str,
-    output_dir: str,
-    image_size: int = 128,
-    margin: int = 20,
-    device: str = "cpu",
-):
-    """
-    Extract faces from all images in input_dir and save them to output_dir.
-    Keeps directory structure intact.
-    """
-    print(
-        f"Extracting faces from '{input_dir}' to '{output_dir}' using {device.upper()}..."
-    )
+# Global variable to hold the MTCNN instance for each worker process.
+worker_mtcnn = None
 
-    # Initialize MTCNN for face detection
-    mtcnn = MTCNN(
+def init_worker(image_size, margin, device):
+    """
+    Initialization function for each worker process.
+    """
+    global worker_mtcnn
+    
+    torch.set_num_threads(1)
+    
+    worker_mtcnn = MTCNN(
         image_size=image_size,
         margin=margin,
         keep_all=False,
         device=device,
-        post_process=False,  # We want raw pixel values, not pre-whitened for Facenet
+        post_process=False,
     )
 
-    # Find all image files
-    # The FaceForensics dataset typically has standard image extensions if frames are extracted,
-    # or if we are processing extracted frames.
-    image_paths = []
-    for ext in ["**/*.png", "**/*.jpg", "**/*.jpeg"]:
-        image_paths.extend(glob.glob(os.path.join(input_dir, ext), recursive=True))
 
-    if not image_paths:
-        print(f"No images found in {input_dir}. Please check your dataset path.")
-        return
+def process_single_image(args):
+    """
+    Process a single image. Accepts an image in its original resolution
+    to avoid discarding high-resolution photos.
+    """
+    img_path, input_dir, output_dir = args
+    try:
+        rel_path = os.path.relpath(img_path, input_dir)
+        out_path = os.path.join(output_dir, rel_path)
 
-    print(f"Found {len(image_paths)} images. Starting processing...")
+        if os.path.exists(out_path):
+            return True
 
-    successful_extractions = 0
-    failed_extractions = 0
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    for img_path in tqdm(image_paths, desc="Processing images"):
-        try:
-            # Recreate directory structure
-            rel_path = os.path.relpath(img_path, input_dir)
-            out_path = os.path.join(output_dir, rel_path)
+        img = Image.open(img_path).convert("RGB")
+        img_cropped = worker_mtcnn(img)
 
-            # Skip if already exists
-            if os.path.exists(out_path):
-                successful_extractions += 1
-                continue
+        if img_cropped is not None:
+            img_cropped = img_cropped.permute(1, 2, 0).cpu().numpy().astype("uint8")
+            res_img = Image.fromarray(img_cropped)
+            res_img.save(out_path)
+            return True
+        return False
+        
+    except Exception:
+        return False
 
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-            # Open image
-            img = Image.open(img_path).convert("RGB")
-
-            # Detect and extract face
-            # MTCNN returns a cropped and resized tensor if face is found
-            # However, since post_process=False, it returns values in range [0, 255]
-            img_cropped = mtcnn(img)
-
-            if img_cropped is not None:
-                # Convert back to PIL Image and save
-                # img_cropped is (C, H, W). Permute to (H, W, C), convert to numpy, then Image
-                img_cropped = img_cropped.permute(1, 2, 0).cpu().numpy().astype("uint8")
-                res_img = Image.fromarray(img_cropped)
-                res_img.save(out_path)
-                successful_extractions += 1
-            else:
-                failed_extractions += 1
-
-        except Exception as e:
-            print(f"Error processing {img_path}: {e}")
-            failed_extractions += 1
-
-    print("\n--- Extraction Summary ---")
-    print(f"Total images processed: {len(image_paths)}")
-    print(f"Successful extractions: {successful_extractions}")
-    print(f"Failed extractions (No face detected or error): {failed_extractions}")
+def get_optimal_device(requested_device):
+    # Automatically determine the best device to use based on availability and user preference.
+    if requested_device != "auto":
+        return requested_device
+    if torch.cuda.is_available():
+        return "cuda"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Extract faces from images using MTCNN"
-    )
-    parser.add_argument(
-        "--input_dir",
-        type=str,
-        default="./data/raw",
-        help="Input directory containing original images",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="./data/processed",
-        help="Output directory for cropped faces",
-    )
-    parser.add_argument(
-        "--image_size",
-        type=int,
-        default=128,
-        help="Output size of cropped faces (default: 128)",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cpu",
-        choices=["cpu", "cuda"],
-        help="Device to run MTCNN on",
-    )
+    # Set the start method for multiprocessing to 'spawn' to avoid issues on certain platforms (like macOS).
+    multiprocessing.set_start_method('spawn', force=True)
 
+    parser = argparse.ArgumentParser(description="Universal Face Extraction (CPU/GPU)")
+    parser.add_argument("--input_dir", type=str, default="./data/raw")
+    parser.add_argument("--output_dir", type=str, default="./data/processed")
+    parser.add_argument("--image_size", type=int, default=128)
+    parser.add_argument("--device", type=str, default="auto", help="'auto', 'cpu', 'cuda', 'mps'")
+    parser.add_argument("--workers", type=int, default=0, help="0 = auto, >0 = number of parallel threads")
     args = parser.parse_args()
 
-    extract_faces(
-        input_dir=args.input_dir,
-        output_dir=args.output_dir,
-        image_size=args.image_size,
-        device=args.device,
-    )
+    active_device = get_optimal_device(args.device)
+
+    # Determine the number of worker processes based on the device and user input.
+    if args.workers == 0:
+        if active_device in ["cuda", "mps"]:
+            # GPU: set the number of workers to the minimum of 4 or the number of CPU cores to avoid overloading the system.
+            num_workers = min(4, multiprocessing.cpu_count())
+        else:
+            # CPU: use all cores minus 1, to keep the system responsive.
+            num_workers = max(1, multiprocessing.cpu_count() - 1)
+    else:
+        num_workers = args.workers
+
+    print(f"Extracting faces from '{args.input_dir}' to '{args.output_dir}'")
+    print(f"Device: {active_device.upper()} | Parallel Threads: {num_workers}")
+
+    image_paths = []
+    for ext in ["**/*.png", "**/*.jpg", "**/*.jpeg"]:
+        image_paths.extend(glob.glob(os.path.join(args.input_dir, ext), recursive=True))
+
+    if not image_paths:
+        print(f"Images not found in {args.input_dir}.")
+        exit()
+
+    tasks = [(path, args.input_dir, args.output_dir) for path in image_paths]
+    
+    successful = 0
+    failed = 0
+
+    with multiprocessing.Pool(
+        processes=num_workers,
+        initializer=init_worker,
+        initargs=(args.image_size, 20, active_device)
+    ) as pool:
+        iterator = pool.imap_unordered(process_single_image, tasks)
+        
+        for success in tqdm(iterator, total=len(tasks), desc="Processing"):
+            if success:
+                successful += 1
+            else:
+                failed += 1
+
+    print("\n--- Results ---")
+    print(f"Total files: {len(image_paths)}")
+    print(f"Successful: {successful}")
+    print(f"Not found/Errors: {failed}")

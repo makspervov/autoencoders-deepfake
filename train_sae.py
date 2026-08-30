@@ -9,6 +9,8 @@ from model_sae import SAE, sae_loss
 
 
 def train_sae(
+    real_dir: str,
+    fake_dir: str,
     epochs: int,
     batch_size: int,
     learning_rate: float,
@@ -34,7 +36,10 @@ def train_sae(
     # Initialize dataloaders
     print("Initializing DataLoaders...")
     train_loader, _, _ = get_dataloaders(
-        batch_size=batch_size, num_workers=2
+        real_dir=real_dir, 
+        fake_dir=fake_dir,
+        batch_size=batch_size,
+        num_workers=4
     )
 
     if train_loader is None:
@@ -47,6 +52,11 @@ def train_sae(
 
     print(f"Starting training for {epochs} epochs...")
     model.train()
+
+    best_recon = float('inf') 
+    patience = 3
+    patience_counter = 0
+    min_delta = 1e-4  # Minimum change in reconstruction loss to be considered an improvement
 
     # Training Loop
     for epoch in range(1, epochs + 1):
@@ -97,15 +107,40 @@ def train_sae(
             f"Epoch {epoch} Summary: Avg Loss: {avg_loss:.4f} | Avg Recon: {avg_recon:.4f} | Avg Sparsity: {avg_sparsity:.4f}"
         )
 
+         # --- Early Stopping ---
+        if avg_recon < best_recon - min_delta:
+            best_recon = avg_recon
+            patience_counter = 0
+            # Save the model if it has improved
+            torch.save(model.state_dict(), save_path)
+            print(f"  [*] Metric improved. Model saved to {save_path}")
+        else:
+            patience_counter += 1
+            print(f"  [!] No improvement. Patience: {patience_counter}/{patience}")
+        
+        if patience_counter >= patience:
+            print(f"\nEarly stopping triggered! Training stopped at epoch {epoch}.")
+            break
+
     # Save model
-    print(f"Training complete. Saving model to {save_path}...")
-    torch.save(model.state_dict(), save_path)
-    print("Model saved successfully.")
+    print(f"\nTraining session complete. Best model is saved at {save_path}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Train SAE for Deepfake Anomaly Detection"
+    )
+    parser.add_argument(
+            "--real_dir",
+            type=str,
+            default="./data/processed/real",
+            help="Path to real/pristine images",
+    )
+    parser.add_argument(
+            "--fake_dir",
+            type=str,
+            default="./data/processed/fake",
+            help="Path to fake images (used only for dataloader initialization here, not training)",
     )
     parser.add_argument(
         "--epochs", type=int, default=10, help="Number of training epochs"
@@ -141,6 +176,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     train_sae(
+        real_dir=args.real_dir,
+        fake_dir=args.fake_dir,
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,

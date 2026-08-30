@@ -34,7 +34,7 @@ def train_dae(
     # Initialize dataloaders
     print("Initializing DataLoaders...")
     train_loader, _, _ = get_dataloaders(
-        real_dir=real_dir, fake_dir=fake_dir, batch_size=batch_size, num_workers=2
+        real_dir=real_dir, fake_dir=fake_dir, batch_size=batch_size, num_workers=4
     )
 
     if train_loader is None:
@@ -47,6 +47,11 @@ def train_dae(
 
     print(f"Starting training for {epochs} epochs...")
     model.train()
+
+    best_loss = float('inf')
+    patience = 3
+    patience_counter = 0
+    min_delta = 1e-4  # Minimum change in reconstruction loss to be considered an improvement
 
     # Training Loop
     for epoch in range(1, epochs + 1):
@@ -90,10 +95,23 @@ def train_dae(
             f"Epoch {epoch} Summary: Avg Loss: {avg_loss:.4f}"
         )
 
+         # --- Early Stopping ---
+        if avg_loss < best_loss - min_delta:
+            best_loss = avg_loss
+            patience_counter = 0
+            # Save the model if it has improveds
+            torch.save(model.state_dict(), save_path)
+            print(f"  [*] Metric improved. Model saved to {save_path}")
+        else:
+            patience_counter += 1
+            print(f"  [!] No improvement. Patience: {patience_counter}/{patience}")
+        
+        if patience_counter >= patience:
+            print(f"\nEarly stopping triggered! Training stopped at epoch {epoch}.")
+            break
+
     # Save model
     print(f"Training complete. Saving model to {save_path}...")
-    torch.save(model.state_dict(), save_path)
-    print("Model saved successfully.")
 
 
 if __name__ == "__main__":
