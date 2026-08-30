@@ -34,7 +34,7 @@ def train_vae(
     # Initialize dataloaders
     print("Initializing DataLoaders...")
     train_loader, _, _ = get_dataloaders(
-        real_dir=real_dir, fake_dir=fake_dir, batch_size=batch_size, num_workers=2
+        real_dir=real_dir, fake_dir=fake_dir, batch_size=batch_size, num_workers=8
     )
 
     if train_loader is None:

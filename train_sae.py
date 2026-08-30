@@ -4,7 +4,7 @@ from tqdm import tqdm
 import torch
 import torch.optim as optim
 
-from dataset_sae import get_dataloaders_sae
+from dataset import get_dataloaders
 from model_sae import SAE, sae_loss
 
 
@@ -33,7 +33,7 @@ def train_sae(
 
     # Initialize dataloaders
     print("Initializing DataLoaders...")
-    train_loader, _, _ = get_dataloaders_sae(
+    train_loader, _, _ = get_dataloaders(
         batch_size=batch_size, num_workers=2
     )
 
