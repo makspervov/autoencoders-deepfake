@@ -8,7 +8,7 @@ from sklearn.metrics import roc_curve, auc, precision_recall_fscore_support
 from tqdm import tqdm
 import openvino as ov
 
-from dataset_sae import get_dataloaders_sae
+from dataset import get_dataloaders
 from model_sae import SAE
 
 
@@ -102,6 +102,8 @@ def get_reconstruction_errors(
 
 
 def evaluate(
+    real_dir: str,
+    fake_dir: str,
     model_path: str,
     device: str,
     batch_size: int,
@@ -133,34 +135,37 @@ def evaluate(
         )
 
     model.to(torch_device)
+    model.eval()
 
     if is_openvino:
         # Initialize OpenVINO Core
         core = ov.Core()
-        available_devices = core.available_devices
-        print(f"Available OpenVINO devices: {available_devices}")
+        target_device = "NPU" if "NPU" in core.available_devices else "CPU"
+        print(f"Available OpenVINO devices: {target_device}")
 
-        target_device = "NPU" if "NPU" in available_devices else "CPU"
-        if target_device == "CPU":
-            print(
-                "Warning: NPU not found in OpenVINO available devices. Falling back to OpenVINO CPU."
-            )
-
-        dummy_input = torch.randn(1, 3, 128, 128)
-        onnx_path = os.path.join(output_dir, "sae.onnx")
+        dummy_input = torch.randn(batch_size, 3, 128, 128)
+        
+        # Прямая конвертация без ONNX с жесткой фиксацией Shape
+        ov_model = ov.convert_model(model, example_input=dummy_input, input=[batch_size, 3, 128, 128])
+        ov_model.reshape([batch_size, 3, 128, 128])
+        
         ir_dir = os.path.join(output_dir, "ir")
-
-        ov_model = export_to_openvino(model, dummy_input, onnx_path, ir_dir)
-        print(f"Compiling OpenVINO model for {target_device}...")
+        os.makedirs(ir_dir, exist_ok=True)
+        ir_path = os.path.join(ir_dir, "sae.xml")
+        ov.save_model(ov_model, ir_path, compress_to_fp16=True)
+        
         ov_compiled_model = core.compile_model(ov_model, target_device)
 
     print("Initializing DataLoaders...")
-    _, real_loader, fake_loader = get_dataloaders_sae(
-        batch_size=batch_size, num_workers=2
+    _, real_loader, fake_loader = get_dataloaders(
+        real_dir=real_dir,
+        fake_dir=fake_dir,
+        batch_size=batch_size,
+        num_workers=4
     )
 
     if real_loader is None or fake_loader is None:
-        print("Error: Dataloaders are empty. Make sure you have processed data.")
+        print("Error: Dataloaders are empty.")
         return
 
     print("\nProcessing Real Images...")
@@ -172,6 +177,20 @@ def evaluate(
     fake_errors, fake_labels, fake_orig, fake_recon = get_reconstruction_errors(
         model, fake_loader, torch_device, is_openvino, ov_compiled_model
     )
+
+    # --- STRICT 1:1 BALANCING OF THE DATASET ---
+    print("\nBalancing dataset to 1:1 ratio for objective metrics...")
+    min_samples = min(len(real_errors), len(fake_errors))
+    np.random.seed(42)
+
+    if len(fake_errors) > min_samples:
+        indices = np.random.choice(len(fake_errors), min_samples, replace=False)
+        fake_errors = fake_errors[indices]
+        fake_labels = fake_labels[indices]
+    elif len(real_errors) > min_samples:
+        indices = np.random.choice(len(real_errors), min_samples, replace=False)
+        real_errors = real_errors[indices]
+        real_labels = real_labels[indices]
 
     # Combine results
     all_errors = np.concatenate([real_errors, fake_errors])
@@ -260,6 +279,18 @@ if __name__ == "__main__":
         description="Evaluate SAE for Deepfake Anomaly Detection"
     )
     parser.add_argument(
+        "--real_dir",
+        type=str,
+        default="./data/processed2/real",
+        help="Directory containing real (pristine) images"
+    )
+    parser.add_argument(
+        "--fake_dir",
+        type=str,
+        default="./data/processed2/fake",
+        help="Directory containing fake (deepfake) images"
+    )
+    parser.add_argument(
         "--model_path",
         type=str,
         default="./models/sae_model.pth",
@@ -285,8 +316,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     evaluate(
-        model_path=args.model_path,
-        device=args.device,
-        batch_size=args.batch_size,
-        output_dir=args.output_dir,
+            real_dir=args.real_dir,
+            fake_dir=args.fake_dir,
+            model_path=args.model_path,
+            device=args.device,
+            batch_size=args.batch_size,
+            output_dir=args.output_dir,
     )

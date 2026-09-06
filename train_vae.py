@@ -51,7 +51,7 @@ def train_vae(
     best_recon = float('inf') 
     patience = 3
     patience_counter = 0
-    min_delta = 2.0  # Minimum change in reconstruction loss to be considered an improvement
+    min_delta = 1.0  # Minimum change in reconstruction loss to be considered an improvement
 
     # Training Loop
     for epoch in range(1, epochs + 1):
@@ -127,13 +127,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--real_dir",
         type=str,
-        default="./data/processed/real",
+        default="./data/processed2/real",
         help="Path to real/pristine images",
     )
     parser.add_argument(
         "--fake_dir",
         type=str,
-        default="./data/processed/fake",
+        default="./data/processed2/fake",
         help="Path to fake images (used only for dataloader initialization here, not training)",
     )
     parser.add_argument(

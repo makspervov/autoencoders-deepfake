@@ -116,11 +116,11 @@ def vae_loss(
     x: torch.Tensor,
     mu: torch.Tensor,
     log_var: torch.Tensor,
-    kld_weight: float = 0.00025,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    kld_weight: float = 0.1,
+):
     """
     Computes the VAE loss function.
-    Loss = Reconstruction Loss (MSE) + KL Divergence.
+    Loss = Reconstruction Loss (L1) + KL Divergence.
 
     Args:
         recon_x: Reconstructed images from decoder.
@@ -135,13 +135,11 @@ def vae_loss(
     """
     # Reconstruction loss (Mean Squared Error)
     # Using sum reduction to be independent of batch size scale issues, then averaging at the end
-    recon_loss = F.mse_loss(recon_x, x, reduction="sum") / x.size(0)
+    recon_loss = F.l1_loss(recon_x, x, reduction="sum") / x.size(0)
 
     # KL Divergence
     # KL(N(mu, var) || N(0, 1)) = -0.5 * sum(1 + log(var) - mu^2 - var)
-    kld_loss = torch.mean(
-        -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1)
-    )
+    kld_loss = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp()) / x.size(0)
 
     # Total loss
     total_loss = recon_loss + kld_weight * kld_loss
