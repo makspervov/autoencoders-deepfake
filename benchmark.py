@@ -14,45 +14,19 @@ def export_to_openvino(
     model: torch.nn.Module, dummy_input: torch.Tensor, model_name: str
 ):
     """
-    Exports a PyTorch model to ONNX, then converts to OpenVINO Intermediate Representation (IR).
+    Directly converts a PyTorch model to OpenVINO Intermediate Representation (IR) without ONNX.
     """
-    print(f"Exporting PyTorch model '{model_name}' to ONNX...")
+    print(f"Converting PyTorch model '{model_name}' directly to OpenVINO...")
     model.eval()
-
-    # Define output names based on the model
-    if model_name.lower() == "vae":
-        output_names = ["recon", "mu", "log_var"]
-    elif model_name.lower() == "sae":
-        output_names = ["recon", "latent"]
-    else:  # dae
-        output_names = ["recon"]
-
-    onnx_path = f"{model_name}.onnx"
-
-    # Export to ONNX
-    torch.onnx.export(
-        model,
-        dummy_input,
-        onnx_path,
-        export_params=True,
-        opset_version=14,
-        do_constant_folding=True,
-        input_names=["input"],
-        output_names=output_names,
-        dynamic_axes={"input": {0: "batch_size"}},
+    
+    # Прямая конвертация с жесткой фиксацией Shape
+    ov_model = ov.convert_model(
+        model, 
+        example_input=dummy_input, 
+        input=[1, 3, dummy_input.shape[2], dummy_input.shape[3]]
     )
-    print(f"Model exported to {onnx_path}")
-
-    print("Converting ONNX to OpenVINO IR...")
-    # Convert ONNX to OpenVINO model
-    ov_model = ov.convert_model(onnx_path)
-
-    # Clean up ONNX file and associated data file
-    if os.path.exists(onnx_path):
-        os.remove(onnx_path)
-    if os.path.exists(onnx_path + ".data"):
-        os.remove(onnx_path + ".data")
-
+    ov_model.reshape([1, 3, dummy_input.shape[2], dummy_input.shape[3]])
+    
     return ov_model
 
 
@@ -93,7 +67,6 @@ def run_benchmark(
         torch_device = torch.device("cpu")
         dummy_input = torch.randn(1, 3, image_size, image_size)
 
-        # Initialize OpenVINO Core
         core = ov.Core()
         available_devices = core.available_devices
         print(f"Available OpenVINO devices: {available_devices}")
@@ -103,9 +76,17 @@ def run_benchmark(
             print("Warning: NPU not found in OpenVINO available devices. Falling back to OpenVINO CPU.")
 
         ov_model = export_to_openvino(model, dummy_input, model_name)
-        print(f"Compiling OpenVINO model for {target_device}...")
-        ov_compiled_model = core.compile_model(ov_model, target_device)
-
+        print(f"Compiling OpenVINO model for {target_device} with LATENCY hint...")
+        
+        # Сжимаем до FP16 прямо в памяти (без сохранения на диск) и задаем приоритет Latency
+        ov_compiled_model = core.compile_model(
+            ov_model, 
+            target_device,
+            config={
+                "PERFORMANCE_HINT": "LATENCY",
+                "INFERENCE_PRECISION_HINT": "f16" 
+            }
+        )
         dummy_input_np = dummy_input.numpy()
 
     else:
