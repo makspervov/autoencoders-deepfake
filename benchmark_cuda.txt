@@ -1,0 +1,133 @@
+(.venv) PS C:\Users\Użytkownik\Autoencoders\autoencoders-deepfake> python benchmark.py --model vae --device cuda
+--- Starting Benchmark ---
+Model: VAE
+Device: CUDA
+Image Size: 128x128
+Warm-up Runs: 20
+Production Runs: 500
+
+1. Initializing model...
+2. Preparing device and dummy data...
+3. Performing warm-up runs...
+4. Performing production runs...
+
+--- Benchmark Results ---
+Total Time for 500 runs: 0.2371 seconds
+Average Latency: 0.47 ms
+Throughput: 2108.53 FPS
+
+
+
+
+
+(.venv) PS C:\Users\Użytkownik\Autoencoders\autoencoders-deepfake> python benchmark.py --model sae --device cuda
+--- Starting Benchmark ---
+Model: SAE
+Device: CUDA
+Image Size: 128x128
+Warm-up Runs: 20
+Production Runs: 500
+
+1. Initializing model...
+2. Preparing device and dummy data...
+3. Performing warm-up runs...
+4. Performing production runs...
+
+--- Benchmark Results ---
+Total Time for 500 runs: 0.2141 seconds
+Average Latency: 0.43 ms
+Throughput: 2335.63 FPS
+
+
+
+
+
+(.venv) PS C:\Users\Użytkownik\Autoencoders\autoencoders-deepfake> python benchmark.py --model dae --device cuda
+--- Starting Benchmark ---
+Model: DAE
+Device: CUDA
+Image Size: 128x128
+Warm-up Runs: 20
+Production Runs: 500
+
+1. Initializing model...
+2. Preparing device and dummy data...
+3. Performing warm-up runs...
+4. Performing production runs...
+
+--- Benchmark Results ---
+Total Time for 500 runs: 0.1874 seconds
+Average Latency: 0.37 ms
+Throughput: 2668.36 FPS
+(.venv) PS C:\Users\Użytkownik\Autoencoders\autoencoders-deepfake> 
+
+
+
+1. Loading DAE model as feature extractor...
+C:\Users\Użytkownik\Autoencoders\autoencoders-deepfake\train_eval_classifier.py:44: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  dae.load_state_dict(torch.load(model_path, map_location=torch_device))
+2. Initializing DataLoaders...
+Reading real images from: .\data\processed2\real
+Reading fake images from: .\data\processed2\fake
+
+3. Extracting Latent Vectors (Real Images)...
+Extracting features: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 364/364 [00:16<00:00, 22.15it/s]
+Extracting features: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 92/92 [00:14<00:00,  6.53it/s]
+
+3. Extracting Latent Vectors (Fake Images)...
+Extracting features: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1340/1340 [00:23<00:00, 56.01it/s]
+
+4. Balancing dataset (1:1)...
+Total balanced samples: 58254 (Features shape: 128)
+
+5. Splitting into Train (80%) and Test (20%)...
+
+6. Normalizing features (StandardScaler)...
+
+7. Training Classifiers...
+ - Training Linear SVM...
+ - Training k-NN...
+ - Training Random Forest...
+ - Training XGBoost...
+
+8. Evaluating Supervised Models...
+
+--- Support Vector Machine (LinearSVC) Results ---
+AUC Score: 0.6784
+Precision: 0.6424
+Recall: 0.6072
+F1-Score: 0.6243
+
+--- k-Nearest Neighbors (k=5) Results ---
+AUC Score: 0.5979
+Precision: 0.6230
+Recall: 0.3765
+F1-Score: 0.4693
+
+--- Random Forest (n=200) Results ---
+AUC Score: 0.7085
+Precision: 0.6539
+Recall: 0.6355
+F1-Score: 0.6446
+
+--- XGBoost (n=200) Results ---
+AUC Score: 0.7366
+Precision: 0.6916
+Recall: 0.6376
+F1-Score: 0.6635
+
+
+
+(.venv) PS C:\Users\Użytkownik\Autoencoders\autoencoders-deepfake> python benchmark_hybrid.py --device cuda
+--- Starting Hybrid Pipeline Benchmark ---
+Pipeline: DAE Encoder (CUDA) + XGBoost (CPU)
+C:\Users\Użytkownik\Autoencoders\autoencoders-deepfake\benchmark_hybrid.py:40: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  dae.load_state_dict(torch.load(dae_path, map_location=torch_device))
+Loading Scaler and XGBoost...
+3. Performing warm-up runs...
+4. Performing production runs...
+
+--- Hybrid Benchmark Results ---
+Total Time for 500 runs: 0.6105 seconds
+Average Latency (End-to-End): 1.22 ms
+Throughput: 819.02 FPS

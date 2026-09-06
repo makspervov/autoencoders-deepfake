@@ -95,12 +95,15 @@ class DAE(nn.Module):
         reconstructed = self.decoder(latent)
         return reconstructed
 
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        return self.encoder(x)
+
 
 def inject_noise(x: torch.Tensor, noise_factor: float = 0.2) -> torch.Tensor:
     """
     Injects Gaussian noise into the input tensor.
 
-    Args:
+    Args:d
         x: Input image tensor (usually in range [0, 1]).
         noise_factor: Multiplier for the standard normal noise.
 

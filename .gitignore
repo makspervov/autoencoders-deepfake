@@ -5,3 +5,5 @@ results/
 .venv/
 *.onnx.data
 *.code-workspace
+results_supervised/
+model_supervised/
