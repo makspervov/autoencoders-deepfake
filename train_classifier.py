@@ -2,37 +2,33 @@ import os
 import argparse
 import numpy as np
 import torch
+import joblib
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.svm import LinearSVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 import xgboost as xgb
-from sklearn.metrics import roc_curve, auc, precision_recall_fscore_support
 from sklearn.preprocessing import StandardScaler
 
 from dataset import get_dataloaders
-from model_dae_classifier import DAE
+from model_dae import DAE
 
 def extract_features(model, dataloader, device):
     features = []
     labels = []
-    
     model.eval()
     with torch.no_grad():
         for data, label in tqdm(dataloader, desc="Extracting features"):
             data = data.to(device)
-            latent = model.encoder(data) 
+            latent = model.encode(data) 
             latent_flat = latent.view(latent.size(0), -1).cpu().numpy()
-            
             features.append(latent_flat)
             labels.append(label.numpy())
-            
     return np.vstack(features), np.concatenate(labels)
 
-def train_and_evaluate_classifier(
+def train_classifiers(
     real_dir: str, fake_dir: str, model_path: str, device: str, batch_size: int, output_dir: str
 ):
     os.makedirs(output_dir, exist_ok=True)
@@ -105,70 +101,30 @@ def train_and_evaluate_classifier(
     print(" - Training XGBoost...")
     xgb_clf.fit(X_train_scaled, y_train)
 
-    print("\n8. Evaluating Supervised Models...")
+    print("\n8. Saving models and test datasets...")
+    joblib.dump(svm_clf, os.path.join(output_dir, "svm_model.joblib"))
+    joblib.dump(knn_clf, os.path.join(output_dir, "knn_model.joblib"))
+    joblib.dump(rf_clf, os.path.join(output_dir, "rf_model.joblib"))
+    joblib.dump(xgb_clf, os.path.join(output_dir, "xgb_model.joblib"))
+    joblib.dump(scaler, os.path.join(output_dir, "scaler.joblib"))
     
-    def evaluate_model(name, clf, X_test, y_test):
-        if hasattr(clf, "decision_function"):
-            y_scores = clf.decision_function(X_test)
-            y_scores = (y_scores - y_scores.min()) / (y_scores.max() - y_scores.min())
-        else:
-            y_scores = clf.predict_proba(X_test)[:, 1]
-
-        y_pred = clf.predict(X_test)
-        
-        fpr, tpr, _ = roc_curve(y_test, y_scores)
-        roc_auc = auc(fpr, tpr)
-        precision, recall, f1, _ = precision_recall_fscore_support(y_test, y_pred, average="binary")
-        
-        print(f"\n--- {name} Results ---")
-        print(f"AUC Score: {roc_auc:.4f}")
-        print(f"Precision: {precision:.4f}")
-        print(f"Recall: {recall:.4f}")
-        print(f"F1-Score: {f1:.4f}")
-        
-        return fpr, tpr, roc_auc
-
-    fpr_svm, tpr_svm, auc_svm = evaluate_model("Support Vector Machine (LinearSVC)", svm_clf, X_test_scaled, y_test)
-    fpr_knn, tpr_knn, auc_knn = evaluate_model("k-Nearest Neighbors (k=5)", knn_clf, X_test_scaled, y_test)
-    fpr_rf, tpr_rf, auc_rf = evaluate_model("Random Forest (n=200)", rf_clf, X_test_scaled, y_test)
-    fpr_xgb, tpr_xgb, auc_xgb = evaluate_model("XGBoost (n=200)", xgb_clf, X_test_scaled, y_test)
-
-    # 9. Рисуем совместную ROC-кривую
-    plt.figure(figsize=(10, 8))
-    plt.plot(fpr_svm, tpr_svm, color="darkorange", lw=2, label=f"SVM (AUC = {auc_svm:.3f})")
-    plt.plot(fpr_knn, tpr_knn, color="green", lw=2, label=f"k-NN (AUC = {auc_knn:.3f})")
-    plt.plot(fpr_rf, tpr_rf, color="red", lw=2, label=f"Random Forest (AUC = {auc_rf:.3f})")
-    plt.plot(fpr_xgb, tpr_xgb, color="purple", lw=2, label=f"XGBoost (AUC = {auc_xgb:.3f})")
+    # Сохраняем тестовую выборку, чтобы не было утечки данных при оценке
+    np.save(os.path.join(output_dir, "X_test_scaled.npy"), X_test_scaled)
+    np.save(os.path.join(output_dir, "y_test.npy"), y_test)
     
-    plt.plot([0, 1], [0, 1], color="navy", lw=2, linestyle="--")
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title("Supervised Classification ROC Curves on DAE Latent Features")
-    plt.legend(loc="lower right")
-    plt.grid(True, alpha=0.3)
-    plt.savefig(os.path.join(output_dir, "supervised_roc_curves.png"))
-    plt.close()
-    
-    print(f"\nROC curves saved to '{output_dir}'")
+    print(f"All artifacts saved to '{output_dir}'. You can now run evaluate_classifier.py")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Supervised Classifier on Latent Features")
-    parser.add_argument("--real_dir", type=str, default="./data/processed2/real")
-    parser.add_argument("--fake_dir", type=str, default="./data/processed2/fake")
+    parser.add_argument("--real_dir", type=str, default="./data/processed/real")
+    parser.add_argument("--fake_dir", type=str, default="./data/processed/fake")
     parser.add_argument("--model_path", type=str, default="./models/dae_model.pth")
     parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--output_dir", type=str, default="./results/ClassifiedDAE")
-
+    parser.add_argument("--output_dir", type=str, default="./models_supervised")
     args = parser.parse_args()
 
-    train_and_evaluate_classifier(
-        real_dir=args.real_dir,
-        fake_dir=args.fake_dir,
-        model_path=args.model_path,
-        device=args.device,
-        batch_size=args.batch_size,
-        output_dir=args.output_dir,
+    train_classifiers(
+        real_dir=args.real_dir, fake_dir=args.fake_dir, model_path=args.model_path,
+        device=args.device, batch_size=args.batch_size, output_dir=args.output_dir,
     )
